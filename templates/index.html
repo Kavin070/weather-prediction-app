@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Prediction App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <i class="fas fa-cloud-sun weather-icon"></i>
+                <h1>Weather Prediction AI</h1>
+                <p>Enter atmospheric conditions to predict the weather</p>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Live Weather Section -->
+            <div class="live-weather-section">
+                <div class="live-weather-header">
+                    <h2><i class="fas fa-satellite"></i> Live Weather Data</h2>
+                    <div class="city-search">
+                        <input type="text" id="cityInput" placeholder="Enter city name" value="London">
+                        <button id="fetchWeatherBtn" class="fetch-btn">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="live-weather-content" id="liveWeatherContent">
+                    <div class="weather-loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading weather data...</p>
+                    </div>
+                </div>
+                
+                <button id="useRealDataBtn" class="use-real-data-btn" style="display: none;">
+                    <i class="fas fa-download"></i>
+                    Use This Data for Prediction
+                </button>
+            </div>
+
+            <!-- Input Section -->
+            <div class="input-section">
+                <h2><i class="fas fa-thermometer-half"></i> Weather Parameters</h2>
+                <form id="weatherForm">
+                    <div class="form-group">
+                        <label for="temperature">
+                            <i class="fas fa-thermometer-half"></i>
+                            Temperature (°C)
+                        </label>
+                        <input type="number" id="temperature" step="0.1" placeholder="e.g., 25.5" required>
+                        <small>Typical range: -40°C to 50°C</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="humidity">
+                            <i class="fas fa-tint"></i>
+                            Humidity (%)
+                        </label>
+                        <input type="number" id="humidity" min="0" max="100" placeholder="e.g., 65" required>
+                        <small>Range: 0% to 100%</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pressure">
+                            <i class="fas fa-gauge"></i>
+                            Atmospheric Pressure (hPa)
+                        </label>
+                        <input type="number" id="pressure" step="0.1" placeholder="e.g., 1013.25" required>
+                        <small>Typical range: 950 to 1050 hPa</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="wind_speed">
+                            <i class="fas fa-wind"></i>
+                            Wind Speed (km/h)
+                        </label>
+                        <input type="number" id="wind_speed" min="0" step="0.1" placeholder="e.g., 15.5" required>
+                        <small>Range: 0+ km/h</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cloud_cover">
+                            <i class="fas fa-cloud"></i>
+                            Cloud Cover (%)
+                        </label>
+                        <input type="number" id="cloud_cover" min="0" max="100" placeholder="e.g., 30" required>
+                        <small>Range: 0% to 100%</small>
+                    </div>
+
+                    <button type="submit" class="predict-btn">
+                        <i class="fas fa-brain"></i>
+                        Predict Weather
+                    </button>
+                </form>
+            </div>
+
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <h2><i class="fas fa-crystal-ball"></i> Prediction Results</h2>
+                
+                <div class="prediction-result">
+                    <div class="main-prediction">
+                        <span class="weather-emoji" id="weatherEmoji">🌤️</span>
+                        <h3 id="predictionText">Sunny</h3>
+                    </div>
+                </div>
+
+                <div class="confidence-section">
+                    <h4>Confidence Levels</h4>
+                    <div id="probabilityBars"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Analyzing weather conditions...</p>
+        </div>
+
+        <div class="error-message" id="errorMessage" style="display: none;"></div>
+    </div>
+
+    <footer class="footer">
+        <p>
+            <i class="fas fa-robot"></i>
+            Powered by Machine Learning | A Kago Production
+        </p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
