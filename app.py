@@ -1,7 +1,7 @@
+# app.py - Updated to load pre-trained model
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-from data_generator import generate_weather_data
-from model import WeatherPredictor
+import pickle
 import requests
 import os
 
@@ -11,22 +11,82 @@ CORS(app)
 # Global model variable
 weather_model = None
 
-# OpenWeatherMap API configuration - now uses environment variable
+# OpenWeatherMap API configuration
 WEATHER_API_KEY = os.environ.get('WEATHER_API_KEY', '8f38a492cf893447c3181c9289354561')
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 
-def initialize_model():
-    """Initialize and train the model"""
+class SimpleFallbackModel:
+    """Simple rule-based weather prediction as fallback"""
+    def __init__(self):
+        self.is_trained = True
+    
+    def predict(self, temperature, humidity, pressure, wind_speed, cloud_cover):
+        """Simple rule-based prediction"""
+        # Basic weather prediction logic
+        if cloud_cover > 80 and humidity > 85:
+            prediction = "Rainy"
+            probabilities = {"Rainy": 0.8, "Cloudy": 0.15, "Sunny": 0.05}
+        elif cloud_cover > 60:
+            prediction = "Cloudy"
+            probabilities = {"Cloudy": 0.6, "Rainy": 0.25, "Sunny": 0.15}
+        elif temperature > 25 and cloud_cover < 30:
+            prediction = "Sunny"
+            probabilities = {"Sunny": 0.7, "Cloudy": 0.25, "Rainy": 0.05}
+        else:
+            prediction = "Clear"
+            probabilities = {"Clear": 0.5, "Cloudy": 0.3, "Sunny": 0.2}
+        
+        return prediction, probabilities
+
+def load_pretrained_model():
+    """Load pre-trained model from disk"""
     global weather_model
-    print("Training weather prediction model...")
+    print("="*50)
+    print("🔄 Loading pre-trained model...")
+    print("="*50)
+    
+    model_path = 'models/weather_model.pkl'
+    
     try:
-        df = generate_weather_data(1000)
-        weather_model = WeatherPredictor()
-        results = weather_model.train(df)
-        print(f"Model trained with {results['accuracy']:.1%} accuracy")
+        # Check if pre-trained model exists
+        if os.path.exists(model_path):
+            print(f"📁 Found pre-trained model at: {model_path}")
+            
+            with open(model_path, 'rb') as f:
+                weather_model = pickle.load(f)
+            
+            print("✅ Pre-trained ML model loaded successfully!")
+            
+            # Verify model is trained
+            if hasattr(weather_model, 'is_trained') and weather_model.is_trained:
+                print("✅ Model is trained and ready for predictions")
+                print("🎯 Available weather classes:", list(weather_model.model.classes_))
+            else:
+                raise Exception("Loaded model is not properly trained")
+                
+        else:
+            raise FileNotFoundError(f"Pre-trained model not found at {model_path}")
+            
+        print("="*50)
+        print("🎉 ML MODEL LOADED SUCCESSFULLY!")
+        print("="*50)
+        
     except Exception as e:
-        print(f"Error training model: {e}")
-        weather_model = None
+        print(f"❌ Failed to load pre-trained model: {e}")
+        print("🔄 Falling back to simple rule-based model...")
+        
+        try:
+            weather_model = SimpleFallbackModel()
+            print("✅ Fallback model initialized successfully!")
+            print("="*50)
+            print("🎉 FALLBACK MODEL ACTIVE!")
+            print("="*50)
+        except Exception as fallback_error:
+            print(f"❌ Fallback model also failed: {fallback_error}")
+            weather_model = None
+            print("="*50)
+            print("❌ ALL MODELS FAILED!")
+            print("="*50)
 
 @app.route('/')
 def home():
@@ -141,7 +201,6 @@ def get_live_weather():
         
         if response.status_code == 200:
             data = response.json()
-            print(f"API Response Data: {data}")  # Debug log
             
             # Extract weather parameters with error handling
             try:
@@ -209,8 +268,10 @@ def get_live_weather():
 def model_info():
     """Get model information"""
     if weather_model and hasattr(weather_model, 'is_trained') and weather_model.is_trained:
+        model_type = "Machine Learning" if hasattr(weather_model, 'model') else "Rule-based"
         return jsonify({
             'trained': True,
+            'type': model_type,
             'features': ['temperature', 'humidity', 'pressure', 'wind_speed', 'cloud_cover']
         })
     return jsonify({'trained': False})
@@ -225,16 +286,21 @@ def internal_error(error):
     return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    # Create templates directory if it doesn't exist
-    if not os.path.exists('templates'):
-        os.makedirs('templates')
-    if not os.path.exists('static'):
-        os.makedirs('static')
+    # Create necessary directories
+    for directory in ['templates', 'static', 'models']:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
     
-    initialize_model()
+    # Load pre-trained model
+    load_pretrained_model()
     
+    # Show model status
     if weather_model is None:
-        print("⚠️  WARNING: Model failed to initialize!")
+        print("⚠️  WARNING: No model loaded!")
+        print("   Run 'python train_and_save_model.py' first to create a pre-trained model")
+    else:
+        model_type = "ML Model" if hasattr(weather_model, 'model') else "Fallback Model"
+        print(f"✅ {model_type} loaded and ready!")
     
     print("\n" + "="*50)
     print("🌤️  WEATHER PREDICTION WEB APP")

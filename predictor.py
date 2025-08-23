@@ -1,3 +1,4 @@
+#predictor.py
 from model import WeatherPredictor
 
 class InteractivePredictor:
