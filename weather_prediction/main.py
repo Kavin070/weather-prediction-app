@@ -1,3 +1,4 @@
+#main.py
 from data_generator import generate_weather_data
 from model import WeatherPredictor
 from visualizer import WeatherVisualizer
