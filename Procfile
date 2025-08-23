@@ -1,1 +1,1 @@
-web: gunicorn weather_prediction.app:app --port $PORT
+web: cd weather_prediction && gunicorn app:app --bind 0.0.0.0:$PORT
