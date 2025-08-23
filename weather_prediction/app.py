@@ -20,7 +20,7 @@ def initialize_model():
     global weather_model
     print("Training weather prediction model...")
     try:
-        df = generate_weather_data(1000)
+        df = generate_weather_data(200)
         weather_model = WeatherPredictor()
         results = weather_model.train(df)
         print(f"Model trained with {results['accuracy']:.1%} accuracy")
