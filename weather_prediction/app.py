@@ -15,18 +15,83 @@ weather_model = None
 WEATHER_API_KEY = os.environ.get('WEATHER_API_KEY', '8f38a492cf893447c3181c9289354561')
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 
+
+class SimpleFallbackModel:
+    """Simple rule-based weather prediction as fallback"""
+    def __init__(self):
+        self.is_trained = True
+    
+    def predict(self, temperature, humidity, pressure, wind_speed, cloud_cover):
+        """Simple rule-based prediction"""
+        # Basic weather prediction logic
+        if cloud_cover > 80 and humidity > 85:
+            prediction = "Rainy"
+            probabilities = {"Rainy": 0.8, "Cloudy": 0.15, "Sunny": 0.05}
+        elif cloud_cover > 60:
+            prediction = "Cloudy"
+            probabilities = {"Cloudy": 0.6, "Rainy": 0.25, "Sunny": 0.15}
+        elif temperature > 25 and cloud_cover < 30:
+            prediction = "Sunny"
+            probabilities = {"Sunny": 0.7, "Cloudy": 0.25, "Rainy": 0.05}
+        else:
+            prediction = "Partly Cloudy"
+            probabilities = {"Partly Cloudy": 0.5, "Cloudy": 0.3, "Sunny": 0.2}
+        
+        return prediction, probabilities
+    
 def initialize_model():
-    """Initialize and train the model"""
+    """Initialize and train the model with fallback"""
     global weather_model
-    print("Training weather prediction model...")
+    print("="*50)
+    print("🔄 Starting model initialization...")
+    print("="*50)
+    
     try:
-        df = generate_weather_data(200)
+        print("Step 1: Testing imports...")
+        from data_generator import generate_weather_data
+        print("✅ data_generator imported successfully")
+        
+        from model import WeatherPredictor
+        print("✅ WeatherPredictor imported successfully")
+        
+        print("Step 2: Generating weather data (200 records)...")
+        df = generate_weather_data(200)  # Reduced from 1000
+        print(f"✅ Generated {len(df)} weather records")
+        
+        print("Step 3: Creating WeatherPredictor instance...")
         weather_model = WeatherPredictor()
+        print("✅ WeatherPredictor instance created")
+        
+        print("Step 4: Training model...")
         results = weather_model.train(df)
-        print(f"Model trained with {results['accuracy']:.1%} accuracy")
+        print(f"✅ Model trained successfully!")
+        print(f"   Accuracy: {results['accuracy']:.1%}")
+        
+        print("="*50)
+        print("🎉 ML MODEL INITIALIZATION COMPLETE!")
+        print("="*50)
+        
     except Exception as e:
-        print(f"Error training model: {e}")
-        weather_model = None
+        print(f"❌ ML Model failed: {e}")
+        print("🔄 Falling back to simple rule-based model...")
+        
+        try:
+            weather_model = SimpleFallbackModel()
+            print("✅ Fallback model initialized successfully!")
+            print("="*50)
+            print("🎉 FALLBACK MODEL ACTIVE!")
+            print("="*50)
+        except Exception as fallback_error:
+            print(f"❌ Fallback model also failed: {fallback_error}")
+            weather_model = None
+    
+    # Final status check
+    if weather_model is None:
+        print("="*50)
+        print("❌ ALL MODELS FAILED!")
+        print("="*50)
+    else:
+        print(f"✅ Final status - Model ready: {hasattr(weather_model, 'is_trained') and weather_model.is_trained}")
 
 @app.route('/')
 def home():
