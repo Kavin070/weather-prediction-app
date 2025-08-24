@@ -328,7 +328,9 @@ def not_found(error):
 def internal_error(error):
     return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
-if __name__ == '__main__':
+# Initialize model when the module loads (works with gunicorn)
+def initialize_app():
+    """Initialize the application - called when module loads"""
     # Create necessary directories
     for directory in ['templates', 'static', 'models']:
         if not os.path.exists(directory):
@@ -353,7 +355,11 @@ if __name__ == '__main__':
     else:
         print("   ✅ Using environment variable API key")
     print("="*50)
-    
+
+# Initialize the app when module loads
+initialize_app()
+
+if __name__ == '__main__':
     # Use environment variable for port (required for deployment)
     port = int(os.environ.get('PORT', 5000))
     debug_mode = os.environ.get('FLASK_ENV') != 'production'
