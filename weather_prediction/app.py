@@ -1,4 +1,4 @@
-# app.py - Updated to load pre-trained model
+# app.py - Updated to train model at startup if not found
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import pickle
@@ -12,7 +12,7 @@ CORS(app)
 weather_model = None
 
 # OpenWeatherMap API configuration
-WEATHER_API_KEY = os.environ.get('WEATHER_API_KEY', '8f38a492cf893447c3181c9289354561')
+WEATHER_API_KEY = os.environ.get('WEATHER_API_KEY', '8f38a492cf893447c3181c9289354561')  # Fallback key
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 class SimpleFallbackModel:
@@ -38,17 +38,41 @@ class SimpleFallbackModel:
         
         return prediction, probabilities
 
-def load_pretrained_model():
-    """Load pre-trained model from disk"""
+def train_model_at_startup():
+    """Train model at startup if pre-trained model doesn't exist"""
+    try:
+        # Import here to avoid issues if modules aren't available
+        from data_generator import generate_weather_data
+        from model import WeatherPredictor
+        
+        print("🤖 Training new model at startup...")
+        
+        # Generate training data
+        df = generate_weather_data(1000)  # Smaller dataset for faster startup
+        print(f"✅ Generated {len(df)} training samples")
+        
+        # Create and train model
+        model = WeatherPredictor()
+        results = model.train(df)
+        print(f"✅ Model trained with {results['accuracy']:.1%} accuracy")
+        
+        return model
+        
+    except Exception as e:
+        print(f"❌ Failed to train model at startup: {e}")
+        return None
+
+def load_or_train_model():
+    """Load pre-trained model or train new one"""
     global weather_model
     print("="*50)
-    print("🔄 Loading pre-trained model...")
+    print("🔄 Initializing weather prediction model...")
     print("="*50)
     
     model_path = 'models/weather_model.pkl'
     
     try:
-        # Check if pre-trained model exists
+        # First, try to load pre-trained model
         if os.path.exists(model_path):
             print(f"📁 Found pre-trained model at: {model_path}")
             
@@ -60,19 +84,38 @@ def load_pretrained_model():
             # Verify model is trained
             if hasattr(weather_model, 'is_trained') and weather_model.is_trained:
                 print("✅ Model is trained and ready for predictions")
-                print("🎯 Available weather classes:", list(weather_model.model.classes_))
+                if hasattr(weather_model, 'model'):
+                    print("🎯 Available weather classes:", list(weather_model.model.classes_))
             else:
                 raise Exception("Loaded model is not properly trained")
-                
         else:
-            raise FileNotFoundError(f"Pre-trained model not found at {model_path}")
+            # Model file doesn't exist, train new one
+            print(f"📁 Pre-trained model not found at: {model_path}")
+            print("🤖 Training new model...")
             
+            weather_model = train_model_at_startup()
+            
+            if weather_model is None:
+                raise Exception("Failed to train new model")
+            
+            # Try to save the newly trained model
+            try:
+                if not os.path.exists('models'):
+                    os.makedirs('models')
+                
+                with open(model_path, 'wb') as f:
+                    pickle.dump(weather_model, f)
+                print(f"💾 New model saved to: {model_path}")
+            except Exception as save_error:
+                print(f"⚠️  Could not save model: {save_error}")
+                print("   (Model will still work for current session)")
+                
         print("="*50)
-        print("🎉 ML MODEL LOADED SUCCESSFULLY!")
+        print("🎉 ML MODEL READY!")
         print("="*50)
         
     except Exception as e:
-        print(f"❌ Failed to load pre-trained model: {e}")
+        print(f"❌ Failed to load/train ML model: {e}")
         print("🔄 Falling back to simple rule-based model...")
         
         try:
@@ -291,13 +334,12 @@ if __name__ == '__main__':
         if not os.path.exists(directory):
             os.makedirs(directory)
     
-    # Load pre-trained model
-    load_pretrained_model()
+    # Load or train model
+    load_or_train_model()
     
     # Show model status
     if weather_model is None:
         print("⚠️  WARNING: No model loaded!")
-        print("   Run 'python train_and_save_model.py' first to create a pre-trained model")
     else:
         model_type = "ML Model" if hasattr(weather_model, 'model') else "Fallback Model"
         print(f"✅ {model_type} loaded and ready!")
