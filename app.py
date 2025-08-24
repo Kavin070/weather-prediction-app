@@ -1,4 +1,3 @@
-# app.py - Updated to train model at startup if not found
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import pickle
@@ -12,17 +11,109 @@ CORS(app)
 weather_model = None
 
 # OpenWeatherMap API configuration
-WEATHER_API_KEY = os.environ.get('WEATHER_API_KEY', '8f38a492cf893447c3181c9289354561')  # Fallback key
+WEATHER_API_KEY = os.environ.get('WEATHER_API_KEY', '8f38a492cf893447c3181c9289354561')
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 
+def train_model_at_runtime():
+    """Always train fresh model to avoid pickle compatibility issues"""
+    try:
+        print("🤖 Training fresh ML model at runtime...")
+        
+        # Import ML dependencies
+        import numpy as np
+        import pandas as pd
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import accuracy_score
+        
+        print("✅ All ML dependencies loaded successfully")
+        
+        # Generate training data directly (avoid import issues)
+        print("📊 Generating training data...")
+        np.random.seed(42)
+        n_samples = 2000
+        
+        # Create synthetic weather data
+        data = {
+            'temperature': np.random.normal(20, 10, n_samples),
+            'humidity': np.random.uniform(30, 90, n_samples),
+            'pressure': np.random.normal(1013, 20, n_samples),
+            'wind_speed': np.random.exponential(5, n_samples),
+            'cloud_cover': np.random.uniform(0, 100, n_samples),
+        }
+        
+        # Generate weather conditions based on features
+        conditions = []
+        for i in range(n_samples):
+            temp = data['temperature'][i]
+            humidity = data['humidity'][i]
+            pressure = data['pressure'][i]
+            clouds = data['cloud_cover'][i]
+            
+            if humidity > 80 and clouds > 70 and pressure < 1005:
+                condition = 'Rainy'
+            elif clouds < 20 and temp > 25:
+                condition = 'Sunny'
+            elif clouds > 80 and temp < 10:
+                condition = 'Snowy'
+            elif clouds > 50:
+                condition = 'Cloudy'
+            else:
+                condition = 'Clear'
+            
+            conditions.append(condition)
+        
+        data['weather_condition'] = conditions
+        df = pd.DataFrame(data)
+        print(f"✅ Generated {len(df)} training samples")
+        
+        # Train model
+        X = df[['temperature', 'humidity', 'pressure', 'wind_speed', 'cloud_cover']]
+        y = df['weather_condition']
+        
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Use smaller forest for faster training
+        model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+        model.fit(X_train, y_train)
+        
+        # Evaluate
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        print(f"✅ Model trained with {accuracy:.1%} accuracy")
+        print(f"🎯 Available classes: {list(model.classes_)}")
+        
+        # Create wrapper class
+        class RuntimeWeatherModel:
+            def __init__(self, sklearn_model):
+                self.model = sklearn_model
+                self.is_trained = True
+            
+            def predict(self, temperature, humidity, pressure, wind_speed, cloud_cover):
+                input_data = [[temperature, humidity, pressure, wind_speed, cloud_cover]]
+                prediction = self.model.predict(input_data)[0]
+                probabilities = self.model.predict_proba(input_data)[0]
+                prob_dict = dict(zip(self.model.classes_, probabilities))
+                return prediction, prob_dict
+        
+        return RuntimeWeatherModel(model)
+        
+    except ImportError as e:
+        print(f"❌ Missing ML dependencies: {e}")
+        return None
+    except Exception as e:
+        print(f"❌ Runtime training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 class SimpleFallbackModel:
-    """Simple rule-based weather prediction as fallback"""
+    """Rule-based fallback model"""
     def __init__(self):
         self.is_trained = True
     
     def predict(self, temperature, humidity, pressure, wind_speed, cloud_cover):
-        """Simple rule-based prediction"""
-        # Basic weather prediction logic
         if cloud_cover > 80 and humidity > 85:
             prediction = "Rainy"
             probabilities = {"Rainy": 0.8, "Cloudy": 0.15, "Sunny": 0.05}
@@ -38,107 +129,57 @@ class SimpleFallbackModel:
         
         return prediction, probabilities
 
-def train_model_at_startup():
-    """Train model at startup if pre-trained model doesn't exist"""
-    try:
-        # Import here to avoid issues if modules aren't available
-        from data_generator import generate_weather_data
-        from model import WeatherPredictor
-        
-        print("🤖 Training new model at startup...")
-        
-        # Generate training data
-        df = generate_weather_data(1000)  # Smaller dataset for faster startup
-        print(f"✅ Generated {len(df)} training samples")
-        
-        # Create and train model
-        model = WeatherPredictor()
-        results = model.train(df)
-        print(f"✅ Model trained with {results['accuracy']:.1%} accuracy")
-        
-        return model
-        
-    except Exception as e:
-        print(f"❌ Failed to train model at startup: {e}")
-        return None
-
-def load_or_train_model():
-    """Load pre-trained model or train new one"""
+def initialize_model():
+    """Initialize weather prediction model"""
     global weather_model
-    print("="*50)
-    print("🔄 Initializing weather prediction model...")
-    print("="*50)
+    print("="*60)
+    print("🔄 INITIALIZING WEATHER PREDICTION MODEL")
+    print("="*60)
     
+    # First try: Load pre-trained model (if exists and compatible)
     model_path = 'models/weather_model.pkl'
-    
-    try:
-        # First, try to load pre-trained model
-        if os.path.exists(model_path):
-            print(f"📁 Found pre-trained model at: {model_path}")
-            
+    if os.path.exists(model_path):
+        try:
+            print(f"📁 Attempting to load: {model_path}")
             with open(model_path, 'rb') as f:
                 weather_model = pickle.load(f)
             
-            print("✅ Pre-trained ML model loaded successfully!")
+            # Test the model
+            test_pred, test_probs = weather_model.predict(20, 60, 1010, 10, 50)
+            print(f"✅ Pre-trained model loaded successfully!")
+            print(f"🎯 Test prediction: {test_pred}")
             
-            # Verify model is trained
-            if hasattr(weather_model, 'is_trained') and weather_model.is_trained:
-                print("✅ Model is trained and ready for predictions")
-                if hasattr(weather_model, 'model'):
-                    print("🎯 Available weather classes:", list(weather_model.model.classes_))
-            else:
-                raise Exception("Loaded model is not properly trained")
-        else:
-            # Model file doesn't exist, train new one
-            print(f"📁 Pre-trained model not found at: {model_path}")
-            print("🤖 Training new model...")
+            print("="*60)
+            print("🎉 PRE-TRAINED ML MODEL ACTIVE!")
+            print("="*60)
+            return
             
-            weather_model = train_model_at_startup()
-            
-            if weather_model is None:
-                raise Exception("Failed to train new model")
-            
-            # Try to save the newly trained model
-            try:
-                if not os.path.exists('models'):
-                    os.makedirs('models')
-                
-                with open(model_path, 'wb') as f:
-                    pickle.dump(weather_model, f)
-                print(f"💾 New model saved to: {model_path}")
-            except Exception as save_error:
-                print(f"⚠️  Could not save model: {save_error}")
-                print("   (Model will still work for current session)")
-                
-        print("="*50)
-        print("🎉 ML MODEL READY!")
-        print("="*50)
-        
-    except Exception as e:
-        print(f"❌ Failed to load/train ML model: {e}")
-        print("🔄 Falling back to simple rule-based model...")
-        
-        try:
-            weather_model = SimpleFallbackModel()
-            print("✅ Fallback model initialized successfully!")
-            print("="*50)
-            print("🎉 FALLBACK MODEL ACTIVE!")
-            print("="*50)
-        except Exception as fallback_error:
-            print(f"❌ Fallback model also failed: {fallback_error}")
-            weather_model = None
-            print("="*50)
-            print("❌ ALL MODELS FAILED!")
-            print("="*50)
+        except Exception as e:
+            print(f"❌ Pre-trained model failed: {e}")
+    
+    # Second try: Train fresh model at runtime
+    print("🤖 Training fresh model at runtime...")
+    weather_model = train_model_at_runtime()
+    
+    if weather_model is not None:
+        print("="*60)
+        print("🎉 RUNTIME-TRAINED ML MODEL ACTIVE!")
+        print("="*60)
+        return
+    
+    # Final fallback: Simple rule-based model
+    print("🔄 Using simple rule-based fallback...")
+    weather_model = SimpleFallbackModel()
+    print("="*60)
+    print("⚠️  FALLBACK MODEL ACTIVE!")
+    print("="*60)
 
 @app.route('/')
 def home():
-    """Serve the main webpage"""
     return render_template('index.html')
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    """API endpoint for weather prediction"""
     try:
         if weather_model is None:
             return jsonify({
@@ -146,23 +187,14 @@ def predict():
                 'error': 'Weather prediction model is not available'
             }), 500
             
-        # Get data from request
         data = request.get_json()
-        
         if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No data provided'
-            }), 400
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
         
-        # Validate required fields
         required_fields = ['temperature', 'humidity', 'pressure', 'wind_speed', 'cloud_cover']
         for field in required_fields:
             if field not in data:
-                return jsonify({
-                    'success': False,
-                    'error': f'Missing required field: {field}'
-                }), 400
+                return jsonify({'success': False, 'error': f'Missing required field: {field}'}), 400
         
         temperature = float(data['temperature'])
         humidity = float(data['humidity'])
@@ -172,29 +204,13 @@ def predict():
         
         # Validate ranges
         if not (0 <= humidity <= 100):
-            return jsonify({
-                'success': False,
-                'error': 'Humidity must be between 0 and 100'
-            }), 400
-            
+            return jsonify({'success': False, 'error': 'Humidity must be between 0 and 100'}), 400
         if not (0 <= cloud_cover <= 100):
-            return jsonify({
-                'success': False,
-                'error': 'Cloud cover must be between 0 and 100'
-            }), 400
-            
+            return jsonify({'success': False, 'error': 'Cloud cover must be between 0 and 100'}), 400
         if wind_speed < 0:
-            return jsonify({
-                'success': False,
-                'error': 'Wind speed cannot be negative'
-            }), 400
+            return jsonify({'success': False, 'error': 'Wind speed cannot be negative'}), 400
         
-        # Make prediction
-        prediction, probabilities = weather_model.predict(
-            temperature, humidity, pressure, wind_speed, cloud_cover
-        )
-        
-        # Convert probabilities to percentages
+        prediction, probabilities = weather_model.predict(temperature, humidity, pressure, wind_speed, cloud_cover)
         prob_percentages = {k: round(v * 100, 1) for k, v in probabilities.items()}
         
         return jsonify({
@@ -204,112 +220,53 @@ def predict():
         })
         
     except ValueError as e:
-        return jsonify({
-            'success': False,
-            'error': f'Invalid input values: {str(e)}'
-        }), 400
+        return jsonify({'success': False, 'error': f'Invalid input values: {str(e)}'}), 400
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': f'Prediction error: {str(e)}'
-        }), 500
+        return jsonify({'success': False, 'error': f'Prediction error: {str(e)}'}), 500
 
 @app.route('/get-live-weather')
 def get_live_weather():
-    """Get live weather data for a city"""
-    city = request.args.get('city', 'London')  # Default to London
-    
-    # Validate city input
+    city = request.args.get('city', 'London')
     if not city or not city.strip():
-        return jsonify({
-            'success': False,
-            'error': 'City name is required'
-        })
+        return jsonify({'success': False, 'error': 'City name is required'})
     
     city = city.strip()
     
     try:
-        # Make API request to OpenWeatherMap
-        params = {
-            'q': city,
-            'appid': WEATHER_API_KEY,
-            'units': 'metric'
-        }
-        
-        print(f"Fetching weather for: {city}")  # Debug log
-        
+        params = {'q': city, 'appid': WEATHER_API_KEY, 'units': 'metric'}
         response = requests.get(WEATHER_API_URL, params=params, timeout=10)
-        
-        print(f"API Response Status: {response.status_code}")  # Debug log
         
         if response.status_code == 200:
             data = response.json()
-            
-            # Extract weather parameters with error handling
-            try:
-                weather_data = {
-                    'success': True,
-                    'city': data['name'],
-                    'country': data['sys']['country'],
-                    'temperature': round(data['main']['temp'], 1),
-                    'humidity': data['main']['humidity'],
-                    'pressure': data['main']['pressure'],
-                    'wind_speed': round(data['wind'].get('speed', 0) * 3.6, 1),  # Convert m/s to km/h
-                    'cloud_cover': data['clouds']['all'],
-                    'description': data['weather'][0]['description'],
-                    'icon': data['weather'][0]['icon'],
-                    'feels_like': round(data['main']['feels_like'], 1),
-                    'visibility': round(data.get('visibility', 0) / 1000, 1) if data.get('visibility') else 0  # Convert to km
-                }
-                
-                return jsonify(weather_data)
-                
-            except KeyError as e:
-                return jsonify({
-                    'success': False,
-                    'error': f'Missing data in weather response: {str(e)}'
-                })
-                
-        elif response.status_code == 401:
-            return jsonify({
-                'success': False,
-                'error': 'Invalid API key. Please check your OpenWeatherMap API key.'
-            })
+            weather_data = {
+                'success': True,
+                'city': data['name'],
+                'country': data['sys']['country'],
+                'temperature': round(data['main']['temp'], 1),
+                'humidity': data['main']['humidity'],
+                'pressure': data['main']['pressure'],
+                'wind_speed': round(data['wind'].get('speed', 0) * 3.6, 1),
+                'cloud_cover': data['clouds']['all'],
+                'description': data['weather'][0]['description'],
+                'icon': data['weather'][0]['icon'],
+                'feels_like': round(data['main']['feels_like'], 1),
+                'visibility': round(data.get('visibility', 0) / 1000, 1) if data.get('visibility') else 0
+            }
+            return jsonify(weather_data)
         elif response.status_code == 404:
-            return jsonify({
-                'success': False,
-                'error': f'City "{city}" not found. Please check the spelling and try again.'
-            })
+            return jsonify({'success': False, 'error': f'City "{city}" not found'})
         else:
-            return jsonify({
-                'success': False,
-                'error': f'Weather service error: {response.status_code}'
-            })
+            return jsonify({'success': False, 'error': f'Weather service error: {response.status_code}'})
             
     except requests.exceptions.Timeout:
-        return jsonify({
-            'success': False,
-            'error': 'Request timeout. Please try again.'
-        })
+        return jsonify({'success': False, 'error': 'Request timeout. Please try again.'})
     except requests.exceptions.ConnectionError:
-        return jsonify({
-            'success': False,
-            'error': 'Unable to connect to weather service. Please check your internet connection.'
-        })
-    except requests.exceptions.RequestException as e:
-        return jsonify({
-            'success': False,
-            'error': f'Weather API request error: {str(e)}'
-        })
+        return jsonify({'success': False, 'error': 'Unable to connect to weather service'})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': f'Unexpected error: {str(e)}'
-        })
+        return jsonify({'success': False, 'error': f'Unexpected error: {str(e)}'})
 
 @app.route('/model-info')
 def model_info():
-    """Get model information"""
     if weather_model and hasattr(weather_model, 'is_trained') and weather_model.is_trained:
         model_type = "Machine Learning" if hasattr(weather_model, 'model') else "Rule-based"
         return jsonify({
@@ -319,52 +276,11 @@ def model_info():
         })
     return jsonify({'trained': False})
 
-# Error handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'success': False, 'error': 'Internal server error'}), 500
-
-# Initialize model when the module loads (works with gunicorn)
-def initialize_app():
-    """Initialize the application - called when module loads"""
-    # Create necessary directories
-    for directory in ['templates', 'static', 'models']:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-    
-    # Load or train model
-    load_or_train_model()
-    
-    # Show model status
-    if weather_model is None:
-        print("⚠️  WARNING: No model loaded!")
-    else:
-        model_type = "ML Model" if hasattr(weather_model, 'model') else "Fallback Model"
-        print(f"✅ {model_type} loaded and ready!")
-    
-    print("\n" + "="*50)
-    print("🌤️  WEATHER PREDICTION WEB APP")
-    print("="*50)
-    print("📝 API Key Status:")
-    if WEATHER_API_KEY == "8f38a492cf893447c3181c9289354561":
-        print("   ⚠️  Using default/fallback API key")
-    else:
-        print("   ✅ Using environment variable API key")
-    print("="*50)
-
-# Initialize the app when module loads
-initialize_app()
+# Initialize model when module loads
+initialize_model()
 
 if __name__ == '__main__':
-    # Use environment variable for port (required for deployment)
     port = int(os.environ.get('PORT', 5000))
     debug_mode = os.environ.get('FLASK_ENV') != 'production'
-    
     print(f"🌐 Server starting on port: {port}")
-    print("="*50)
-    
     app.run(debug=debug_mode, host='0.0.0.0', port=port)
